@@ -1,3 +1,7 @@
+# Aktueller Update-Hinweis
+
+Für ein bereits eingerichtetes Projekt zuerst [UPDATE-2026-09-23.md](UPDATE-2026-09-23.md) lesen. Das Update benötigt keine Neuinitialisierung. Die Anleitung unten beschreibt die ursprüngliche Ersteinrichtung. Der Update-Hinweis dokumentiert die neuen Rollen, Funktionen und Grenzen der Bildspeicherung.
+
 # Bonanzbar – gemeinsame Webapp mit Anmeldung
 
 Dieses Paket ist eine eigenständige Vercel-Version der bisherigen HTML-Testapp. Es enthält Frontend, serverseitige API, Datenbankschema und Einrichtung des ersten Master-Kontos. Es wurde noch nicht auf bbdrinks.vercel.app installiert. Vorhandene Daten dieser Website oder der lokalen Testdatei werden nicht automatisch übernommen. Vor einem Austausch das bestehende Projekt und seine Daten sichern.

@@ -4,7 +4,7 @@ export async function sb(path,options={}){const {url,key}=config();const r=await
 export async function read(){const rows=await sb('/rest/v1/app_state?id=eq.1&select=revision,state');if(!rows?.length)throw Error('Datenbank zuerst initialisieren.');return rows[0]}
 export async function commit(revision,state){return await sb('/rest/v1/rpc/commit_state',{method:'POST',body:JSON.stringify({expected:revision,next_state:state})})}
 export function json(res,status,data){res.setHeader('Cache-Control','no-store');res.status(status).json(data)}
-export function body(req){const b=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!b||typeof b!=='object'||Array.isArray(b)||JSON.stringify(b).length>500000)throw Error('Ungültige Anfrage.');return b}
+export function body(req){const b=typeof req.body==='string'?JSON.parse(req.body):req.body;if(!b||typeof b!=='object'||Array.isArray(b)||Buffer.byteLength(JSON.stringify(b),'utf8')>3000000)throw Error('Ungültige Anfrage.');return b}
 export function origin(req){if(req.headers.origin!==config().origin){const e=Error('Anfrage nicht erlaubt.');e.status=403;throw e}}
 const access='__Host-bb_access',refresh='__Host-bb_refresh';
 export function cookies(res,session){res.setHeader('Set-Cookie',[`${access}=${session?.access_token||''}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${session?3600:0}`,`${refresh}=${session?.refresh_token||''}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${session?2592000:0}`])}
