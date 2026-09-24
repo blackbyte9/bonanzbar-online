@@ -1,0 +1,2 @@
+import {run} from './domain.mjs';
+export async function viewAs(state,userId,role){const actual=state.roles[userId];if(!['admin','master'].includes(actual))throw Error('Die Ansichtsvorschau ist nur für Admin und Master.');const allowed=['guest','member','crew','admin',...(actual==='master'?['master']:[])];if(!allowed.includes(role))throw Error('Diese Vorschau ist nicht verfügbar.');const copy=structuredClone(state);copy.roles[userId]=role;const out=await run(copy,userId);return {...out.body,preview:role,canPreview:true,viewerRole:actual}}

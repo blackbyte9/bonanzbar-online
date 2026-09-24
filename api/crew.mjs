@@ -1,12 +1,13 @@
+import {viewAs} from '../server/preview.mjs';
 import {randomBytes,createHash} from 'node:crypto';
 import {run} from '../server/domain.mjs';
 import {sb,read,commit,user,origin,body,json,failure} from '../server/platform.mjs';
 async function authMember(email){for(let page=1;page<100;page++){const x=await sb(`/auth/v1/admin/users?page=${page}&per_page=100`);const found=x.users.find(u=>u.email?.toLowerCase()===email);if(found)return found;if(x.users.length<100)break}try{return await sb('/auth/v1/admin/users',{method:'POST',body:JSON.stringify({email,password:randomBytes(40).toString('base64url'),email_confirm:true})})}catch(e){throw Error('Mitglied konnte nicht angelegt werden. Bitte erneut versuchen.')}}
-export default async function handler(req,res){try{if(!['GET','POST'].includes(req.method))return json(res,405,{error:'Methode nicht erlaubt'});if(req.method==='POST')origin(req);const u=await user(req,res);let command=req.method==='POST'?body(req):null;
+export default async function handler(req,res){try{if(!['GET','POST'].includes(req.method))return json(res,405,{error:'Methode nicht erlaubt'});if(req.method==='POST'){origin(req);if(req.query?.viewAs)return json(res,403,{error:'In der Vorschau sind keine Änderungen möglich.'})}const u=await user(req,res);let command=req.method==='POST'?body(req):null;
 if(command&&(!/^[a-zA-Z0-9-]{16,100}$/.test(command.requestId||'')))throw Error('Anfragekennung fehlt.');
 const fingerprint=command?createHash('sha256').update(JSON.stringify(command)).digest('hex'):'';
 let provisioned;
-for(let attempt=0;attempt<8;attempt++){const {state,revision}=await read();if(!state.members.some(x=>x.userId===u.id))throw Error('Kein Mitgliedskonto.');if(!command){const out=await run(state,u.id);return json(res,200,out.body)}
+for(let attempt=0;attempt<8;attempt++){const {state,revision}=await read();if(!state.members.some(x=>x.userId===u.id))throw Error('Kein Mitgliedskonto.');if(!command){if(req.query?.viewAs)return json(res,200,await viewAs(state,u.id,req.query.viewAs));const out=await run(state,u.id);return json(res,200,{...out.body,canPreview:['admin','master'].includes(state.roles[u.id]),viewerRole:state.roles[u.id]})}
 if(['settle','allocate','receipt','assignRole','resolveCorrection','resetAll','ledgerAdd','ledgerDelete','ledgerClose'].includes(command.action)&&state.roles[u.id]!=='master')throw Error('Nur Master darf diese Funktion nutzen.');if(['saveMember','saveBand','saveSpecial','disableSpecial','eventVideo','saveStaffing','saveRecap','deleteRecap','drink','archiveDrink','order','done','syncEvents','decideApplication'].includes(command.action)&&!['admin','master'].includes(state.roles[u.id]))throw Error('Nur Admin oder Master.');
 const key=u.id+':'+command.requestId,previous=state.requests?.[key];if(previous){if(previous.fingerprint!==fingerprint)throw Error('Anfragekennung wurde bereits verwendet.');return json(res,200,previous.result)}
 let c={...command};delete c.authId;
