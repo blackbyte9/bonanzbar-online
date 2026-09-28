@@ -1,0 +1,3 @@
+export const featureDefaults={wall:false,recaps:false,todos:false,shopping:true,stock:true,drinks:true,staffing:true,special:true};
+export const features=s=>Object.fromEntries(Object.entries(featureDefaults).map(([k,v])=>[k,typeof s.features?.[k]==='boolean'?s.features[k]:v]));
+export function requireFeature(s,action){const key=({wallPost:'wall',wallComment:'wall',wallDelete:'wall',handoverAdd:'todos',handoverStatus:'todos',shop:'shopping',done:'shopping',stock:'stock',tally:'drinks',applyEvent:'staffing',decideApplication:'staffing',saveStaffing:'staffing'})[action];if(key&&!features(s)[key])throw Error('Diese Funktion ist derzeit ausgeschaltet.');}
