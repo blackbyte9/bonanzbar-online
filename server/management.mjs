@@ -24,14 +24,14 @@ export function management(s,b,{active,admin,master,id,now,u}){
  if(b.action==='saveRental'?!admin:!master)throw Error(b.action==='saveRental'?'Nur Admin oder Master.':'Nur Master darf diese Funktion nutzen.');
  if(b.action==='saveFeatures'){const f=features(s);for(const k of Object.keys(featureDefaults)){if(typeof b.features?.[k]!=='boolean')throw Error('Ungültige Funktionsauswahl.');f[k]=b.features[k]}s.features=f;}
  if(b.action==='saveRental'){
-  const name=text(b.name,150),phone=text(b.phone,35),notes=String(b.notes||'');if(!/^\+?[\d\s()/.-]{6,35}$/.test(phone)||notes.length>3000)throw Error('Handynummer oder Notiz ungültig.');
+  const name=text(b.name,150),phone=String(b.phone||'').trim(),notes=String(b.notes||'');if((phone&&!/^\+?[\d\s()/.-]{6,35}$/.test(phone))||notes.length>3000)throw Error('Handynummer oder Notiz ungültig.');
   const valid=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v+'Z').toISOString().slice(0,16)===v;
   if(!valid(b.start)||!valid(b.end)||b.start>=b.end)throw Error('Gültigen Beginn und späteres Ende angeben.');
   if(!['requested','confirmed','cancelled'].includes(b.status))throw Error('Ungültiger Status.');s.rentals??=[];const prior=s.rentals.find(x=>x.id===b.id);if(b.id&&!prior)throw Error('Vermietung nicht gefunden.');
   const conflicts=s.rentals.filter(x=>x.id!==b.id&&x.status!=='cancelled'&&b.start<x.end&&b.end>x.start).map(x=>x.name);
   const events=s.events.filter(e=>e.day>=b.start.slice(0,10)&&e.day<=b.end.slice(0,10)).map(e=>e.name);
   if(b.status!=='cancelled'&&(conflicts.length||events.length)&&b.acceptConflicts!==true)throw Error('Überschneidung: '+[...conflicts,...events].join(', ')+'. Bitte bewusst bestätigen.');
-  const row={id:prior?.id||id,name,phone,notes,start:b.start,end:b.end,status:b.status,updatedAt:now,by:u.displayName};if(prior)Object.assign(prior,row);else s.rentals.push(row);
+  const row={id:prior?.id||id,name,phone,notes,start:b.start,end:b.end,status:b.status,dateOnly:false,updatedAt:now,by:u.displayName};if(prior)Object.assign(prior,row);else s.rentals.push(row);
  }
  if(b.action==='saveEventAccount'||b.action==='closeEventAccount'){
   s.eventAccounts??=[];const prior=s.eventAccounts.find(x=>x.event===b.event);if(prior?.closed)throw Error('Abrechnung bereits festgeschrieben.');
