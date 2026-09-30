@@ -10,12 +10,12 @@ export function calculateInventory(s,b){
  const day=d=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin'}).format(new Date(d));
  if(day(before.date)>event.day||day(after.date)<event.day)throw Error('Die Bestände müssen den Veranstaltungstag einschließen.');
  if((s.eventAccounts||[]).some(a=>a.event!==b.event&&Date.parse(a.beforeDate)<Date.parse(after.date)&&Date.parse(a.afterDate)>Date.parse(before.date)))throw Error('Dieser Bestandszeitraum überschneidet sich mit einer anderen Veranstaltungsabrechnung.');
- const first=JSON.parse(before.data),last=JSON.parse(after.data);
+ const first=JSON.parse(before.data).filter(d=>!d.supply),last=JSON.parse(after.data).filter(d=>!d.supply);
  if(first.length!==last.length||first.some(d=>!last.some(x=>x.id===d.id)))throw Error('Beide Inventuren müssen dieselben Getränke enthalten. Bitte den Inventarwechsel prüfen.');
- const items=first.map(d=>{const end=last.find(x=>x.id===d.id),startCount=amount(d.cases)*amount(d.pack,1000)+amount(d.bottles),endCount=amount(end.cases)*amount(end.pack,1000)+amount(end.bottles),consumed=startCount-endCount;
+ const items=first.map(d=>{const end=last.find(x=>x.id===d.id),startCount=amount(d.cases)*amount(d.pack,1000)+amount(d.bottles)+amount(d.restMl??0,700)/700,endCount=amount(end.cases)*amount(end.pack,1000)+amount(end.bottles)+amount(end.restMl??0,700)/700,consumed=Math.round((startCount-endCount)*700)/700;
  if(consumed<0)throw Error(d.name+': Endbestand ist größer als Anfangsbestand. Nachlieferungen oder Zählfehler bitte prüfen.');
  const price=d.purchasePrice??s.drinks.find(x=>x.id===d.id)?.purchasePrice;if(price==null)throw Error(d.name+': Einkaufspreis im Inventar ergänzen.');amount(price,100000);
- return {id:d.id,name:d.name,before:startCount,after:endCount,consumed,purchasePrice:price,cost:consumed*price,priceSource:d.purchasePrice==null?'Aktueller Inventarpreis':'Preis der Anfangsinventur'};});
+ return {id:d.id,name:d.name,before:startCount,after:endCount,consumed,purchasePrice:price,cost:Math.round(consumed*price),priceSource:d.purchasePrice==null?'Aktueller Inventarpreis':'Preis der Anfangsinventur'};});
  const cost=items.reduce((n,i)=>n+i.cost,0);if(!Number.isSafeInteger(cost))throw Error('Beträge zu groß.');
  return {event:event.id,eventName:event.name,eventDay:event.day,before:before.id,after:after.id,beforeDate:before.date,afterDate:after.date,items,cost};
 }
