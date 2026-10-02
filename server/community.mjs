@@ -6,7 +6,7 @@ export function community(s,b,{active,admin,u,id,now}){
   const day=b.day,note=String(b.note||'').trim();if(typeof day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day))||new Date(day+'T12:00:00Z').toISOString().slice(0,10)!==day)throw Error('Bitte ein gültiges Datum wählen.');
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin'}).format(new Date());if(day<today)throw Error('Bitte heute oder ein zukünftiges Datum wählen.');if(!note||note.length>3000)throw Error('Bitte eine Notiz mit 1 bis 3.000 Zeichen eingeben.');
   s.rentals??=[];if(s.rentals.some(r=>r.requestedBy===active&&r.start.slice(0,10)===day&&r.status!=='cancelled'))throw Error('Für diesen Tag liegt bereits eine Anfrage von dir vor.');
-  s.rentals.push({id,name:u.displayName,phone:'',notes:note,start:day+'T00:00',end:day+'T23:59',status:'requested',requestedBy:active,requestedAt:now,by:u.displayName,dateOnly:true});return {ok:true};
+  const phone=String(b.phone||'').trim();if(phone&&!/^\+?[0-9 ()/.-]{6,35}$/.test(phone))throw Error('Bitte gültige Handynummer eingeben.');s.rentals.push({id,name:u.displayName,phone,notes:note,start:day+'T00:00',end:day+'T23:59',status:'requested',requestedBy:active,requestedAt:now,by:u.displayName,dateOnly:true});return {ok:true};
  }
  if(!admin)throw Error('Nur Admin oder Master darf Infos verwalten.');s.infos??=[];
  if(b.action==='deleteInfo'){if(!s.infos.some(i=>i.id===b.id))throw Error('Info nicht gefunden.');s.infos=s.infos.filter(i=>i.id!==b.id);return {ok:true};}
