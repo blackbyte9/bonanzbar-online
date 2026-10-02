@@ -1,7 +1,7 @@
 import {read,commit} from './platform.mjs';
 export async function ensureMember(user){
  for(let attempt=0;attempt<8;attempt++){
-  const {state,revision}=await read(),existing=state.members.find(x=>x.userId===user.id);if(existing)return existing;
+  const {state,revision}=await read(),existing=state.members.find(x=>x.userId===user.id);if(existing){if(existing.disabled)throw Error('Dieses Konto wurde deaktiviert. Bitte Master kontaktieren.');return existing;}
   if(!user.id||!user.email||!user.email_confirmed_at)throw Error('Bitte zuerst die E-Mail-Adresse bestätigen.');
   if(state.members.some(x=>x.email.toLowerCase()===user.email.toLowerCase()))throw Error('Diese E-Mail ist bereits einem anderen Konto zugeordnet. Bitte Master kontaktieren.');
   const supplied=user.user_metadata?.display_name;
