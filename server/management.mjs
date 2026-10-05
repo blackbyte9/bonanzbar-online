@@ -1,3 +1,5 @@
+export const dutyDefaults={Theke:4000,Parkplatz:1000,Ton:4000,Licht:4000,Eintritt:2000,Joker:0};
+export const dutyPrices=s=>({...dutyDefaults,...s.dutyPrices});
 import {features,featureDefaults} from './features.mjs';
 import {dayNow} from './operations-api.mjs';
 const amount=(v,max=100000000)=>{if(!Number.isSafeInteger(v)||v<0||v>max)throw Error('Ungültiger Betrag.');return v};
@@ -20,8 +22,10 @@ export function calculateInventory(s,b){
  return {event:event.id,eventName:event.name,eventDay:event.day,before:before.id,after:after.id,beforeDate:before.date,afterDate:after.date,items,cost};
 }
 export function management(s,b,{active,admin,master,id,now,u}){
- const names=['saveFeatures','saveRental','saveEventAccount','closeEventAccount','confirmHelp','settleAccount','accountPayment'];if(!names.includes(b.action))return null;
+ const names=['saveDutyPrices','accountAdjustment','saveFeatures','saveRental','saveEventAccount','closeEventAccount','confirmHelp','settleAccount','accountPayment'];if(!names.includes(b.action))return null;
  if(b.action==='saveRental'?!admin:!master)throw Error(b.action==='saveRental'?'Nur Admin oder Master.':'Nur Master darf diese Funktion nutzen.');
+ if(b.action==='saveDutyPrices'){const prices={};for(const duty of Object.keys(dutyDefaults))prices[duty]=amount(b.prices?.[duty],100000);s.dutyPrices=prices;}
+ if(b.action==='accountAdjustment'){if(!s.members.some(x=>x.userId===b.user)||!['credit','debit'].includes(b.kind))throw Error('Ungültige Buchung.');const value=amount(b.amount),reason=text(b.reason,500);if(!value)throw Error('Betrag muss positiv sein.');s.accountEntries??=[];if(!s.accountEntries.some(x=>x.id===id))s.accountEntries.push({id,user:b.user,kind:'adjustment',amount:b.kind==='credit'?value:-value,reason,date:now,by:u.displayName});}
  if(b.action==='saveFeatures'){const f=features(s);for(const k of Object.keys(featureDefaults)){if(typeof b.features?.[k]!=='boolean')throw Error('Ungültige Funktionsauswahl.');f[k]=b.features[k]}s.features=f;}
  if(b.action==='saveRental'){
   const name=text(b.name,150),phone=String(b.phone||'').trim(),notes=String(b.notes||'');if((phone&&!/^\+?[\d\s()/.-]{6,35}$/.test(phone))||notes.length>3000)throw Error('Handynummer oder Notiz ungültig.');
@@ -42,7 +46,7 @@ export function management(s,b,{active,admin,master,id,now,u}){
   const a=s.applications.find(x=>x.id===b.application&&x.status==='confirmed'),event=s.events.find(e=>e.id===a?.event);
   if(!a||!event||event.day>=dayNow())throw Error('Nur bestätigte Dienste nach dem Veranstaltungstag können gutgeschrieben werden.');
   s.accountEntries??=[];if(s.accountEntries.some(x=>x.kind==='help'&&x.user===a.user&&x.event===a.event))throw Error('Diese Person hat für diese Veranstaltung bereits eine Gutschrift.');
-  s.accountEntries.push({id,kind:'help',user:a.user,event:a.event,eventName:event.name,application:a.id,hours:5,rate:1000,amount:5000,date:now,by:u.displayName});
+  s.accountEntries.push({id,kind:'help',user:a.user,event:a.event,eventName:event.name,application:a.id,hours:5,duty:a.duty,amount:dutyPrices(s)[a.duty]??0,date:now,by:u.displayName});
  }
  if(b.action==='settleAccount'){
   if(!s.members.some(x=>x.userId===b.user))throw Error('Mitglied nicht gefunden.');if(!Array.isArray(b.ids)||!b.ids.length||new Set(b.ids).size!==b.ids.length)throw Error('Keine offenen Positionen.');
