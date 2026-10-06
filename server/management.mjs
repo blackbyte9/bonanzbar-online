@@ -16,8 +16,8 @@ export function calculateInventory(s,b){
  if(first.length!==last.length||first.some(d=>!last.some(x=>x.id===d.id)))throw Error('Beide Inventuren müssen dieselben Getränke enthalten. Bitte den Inventarwechsel prüfen.');
  const items=first.map(d=>{const end=last.find(x=>x.id===d.id),startCount=amount(d.cases)*amount(d.pack,1000)+amount(d.bottles)+amount(d.restMl??0,700)/700,endCount=amount(end.cases)*amount(end.pack,1000)+amount(end.bottles)+amount(end.restMl??0,700)/700,consumed=Math.round((startCount-endCount)*700)/700;
  if(consumed<0)throw Error(d.name+': Endbestand ist größer als Anfangsbestand. Nachlieferungen oder Zählfehler bitte prüfen.');
- const price=d.purchasePrice??s.drinks.find(x=>x.id===d.id)?.purchasePrice;if(price==null)throw Error(d.name+': Einkaufspreis im Inventar ergänzen.');amount(price,100000);
- return {id:d.id,name:d.name,before:startCount,after:endCount,consumed,purchasePrice:price,cost:Math.round(consumed*price),priceSource:d.purchasePrice==null?'Aktueller Inventarpreis':'Preis der Anfangsinventur'};});
+ const current=s.drinks.find(x=>x.id===d.id)?.purchasePrice;const fromCurrent=d.purchasePrice==null||(d.purchasePrice===0&&current>0);const price=fromCurrent?current:d.purchasePrice;if(price==null)throw Error(d.name+': Einkaufspreis im Inventar ergänzen.');amount(price,100000);if(consumed>0&&price===0)throw Error(d.name+': Einkaufspreis ist 0. Bitte im Inventar ergänzen, damit der Verbrauch nicht kostenlos abgerechnet wird.');
+ return {id:d.id,name:d.name,before:startCount,after:endCount,consumed,purchasePrice:price,cost:Math.round(consumed*price),priceSource:fromCurrent?'Aktueller Inventarpreis (fehlender/0-EK ergänzt)':'Preis der Anfangsinventur'};});
  const cost=items.reduce((n,i)=>n+i.cost,0);if(!Number.isSafeInteger(cost))throw Error('Beträge zu groß.');
  return {event:event.id,eventName:event.name,eventDay:event.day,before:before.id,after:after.id,beforeDate:before.date,afterDate:after.date,items,cost};
 }
