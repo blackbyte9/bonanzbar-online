@@ -1,3 +1,5 @@
+import {csvInventory} from './inventory-csv-seed.mjs';
+import {importInventory} from './inventory-import.mjs';
 import {catalog,shoppingChoices,shoppingAction} from './shopping.mjs';
 import {rentalView,infoView,community} from './community.mjs';
 import {features,requireFeature} from './features.mjs';
@@ -27,7 +29,17 @@ const extra=community(s,b,{active,admin,u,id,now});if(extra){writeState(s);retur
 const managed=management(s,b,{active,admin,master,staff,u,id,now});if(managed){writeState(s);return reply(managed)}
 const extension=operate(s,b,{active,admin,master,staff,u,id,now});if(extension){writeState(s);return reply(extension)}
 let result={ok:true};
-if(b.action==='resetAll'){if(b.confirmation!=='reset')throw Error('Bitte exakt reset eingeben.');const clean=initialState();clean.drinks=[];clean.events=[];clean.eventSync=null;clean.members=structuredClone(s.members);clean.roles=Object.fromEntries(s.members.map(p=>[p.userId,s.roles[p.userId]||'crew']));clean.roles[active]='master';writeState(clean);return reply({ok:true,reset:true})}
+if(b.action==='resetInventoryCsv'){
+if(!master)throw Error('Nur Master darf das Inventar ersetzen.');
+if(s.inventoryCsvReset==='csv-2026-10-05-v1')throw Error('Diese CSV wurde bereits als neues Inventar eingerichtet.');
+const matched=new Set(csvInventory.map(d=>d.name.toLocaleLowerCase('de')));
+result=importInventory(s,{items:csvInventory,overwrite:true},true);
+for(const d of s.drinks)if(!matched.has(d.name.toLocaleLowerCase('de')))d.active=0;
+s.records.push({id,kind:'stock',by:u.displayName,date:now,data:JSON.stringify(s.drinks.filter(d=>d.active).map(d=>({id:d.id,name:d.name,pack:d.pack,purchasePrice:d.purchasePrice,cases:0,bottles:0,restMl:0,supply:!!d.supply}))),reason:'Neustart aus CSV – Bestand 0'});
+s.inventoryCsvReset='csv-2026-10-05-v1';
+}
+else if(b.action==='importInventory'){result=importInventory(s,b,admin)}
+else if(b.action==='resetAll'){if(b.confirmation!=='reset')throw Error('Bitte exakt reset eingeben.');const clean=initialState();clean.drinks=[];clean.events=[];clean.eventSync=null;clean.members=structuredClone(s.members);clean.roles=Object.fromEntries(s.members.map(p=>[p.userId,s.roles[p.userId]||'crew']));clean.roles[active]='master';writeState(clean);return reply({ok:true,reset:true})}
 else if(b.action==='setMemberActive'){if(!admin)throw Error('Nur Admin oder Master.');const target=s.members.find(x=>x.userId===b.user);if(!target||typeof b.enabled!=='boolean')throw Error('Ungültiges Konto.');if(b.user===active)throw Error('Das eigene Konto kann nicht deaktiviert werden.');if(s.roles[b.user]==='master')throw Error('Master-Konten können hier nicht deaktiviert werden.');if(s.roles[b.user]==='admin'&&!master)throw Error('Nur Master darf Admin-Konten deaktivieren.');target.disabled=!b.enabled;target.statusChangedAt=now;target.statusChangedBy=active;}
 else if(b.action==='saveMember'){if(!master){const existing=s.members.find(x=>x.userId===b.id);if(existing&&b.role!==s.roles[existing.userId])throw Error('Nur Master darf Rollen ändern.');if(!existing&&b.role!=='crew')throw Error('Admin kann neue Konten als Crew anlegen; Rollen vergibt Master.');}const name=str(b.name),email=str(b.email).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)throw Error('Bitte eine gültige E-Mail-Adresse eingeben.');if(!['crew','admin','master','member','guest'].includes(b.role))throw Error('Ungültige Rolle.');const memberId=b.id||b.authId||id;if(memberId===active&&s.roles[active]==='master'&&b.role!=='master')throw Error('Du kannst deine eigene Master-Rolle nicht herabsetzen.');const existing=s.members.find(x=>x.userId===memberId);if(b.id&&!existing)throw Error('Mitglied nicht gefunden.');if(s.members.some(x=>x.userId!==memberId&&x.email.toLowerCase()===email))throw Error('Diese E-Mail-Adresse ist bereits vergeben.');if(s.roles[memberId]==='master'&&b.role!=='master'&&Object.values(s.roles).filter(r=>r==='master').length<=1)throw Error('Mindestens ein Master-Konto muss erhalten bleiben.');if(existing){existing.displayName=name;existing.email=email}else s.members.push({userId:memberId,displayName:name,email});s.roles[memberId]=b.role}
 else if(b.action==='assignRole'){if(b.user===active&&master&&b.role!=='master')throw Error('Du kannst deine eigene Master-Rolle nicht herabsetzen.');if(!s.members.some(p=>p.userId===b.user)||!['crew','admin','master','member','guest'].includes(b.role))throw Error('Ungültige Rollenzuweisung.');if(s.roles[b.user]==='master'&&b.role!=='master'&&Object.values(s.roles).filter(r=>r==='master').length<=1)throw Error('Mindestens ein Master-Konto muss erhalten bleiben.');s.roles[b.user]=b.role}
