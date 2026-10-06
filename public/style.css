@@ -126,3 +126,5 @@ html{font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%}body{lin
 
 /* New information must be obvious on the home screen. */
 .app .home-tile.has-unread-info,.app .guest-shortcuts button.has-unread-info{background:#742536!important;border:3px solid #ffcc70!important;box-shadow:0 0 0 2px #ffcc7026}.app .has-unread-info .info-subjects .info-subject{color:#ffdf83!important;font-size:1rem!important;font-weight:900!important}.app .home-tile.has-unread-info:hover,.app .guest-shortcuts button.has-unread-info:hover{background:#742536!important}
+
+.home-tile.rental-pending,.management-tile.rental-pending{background:#a5222d!important;border:2px solid #ffb9bb!important;color:#fff!important}.rental-pending::after{content:"● Offene Mietanfrage";display:block;font-size:14px;color:#fff;font-weight:700}
