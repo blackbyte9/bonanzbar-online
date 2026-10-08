@@ -9,7 +9,10 @@ import {operate,staffingView} from './operations-api.mjs';
 export const duties=['Theke','Parkplatz','Ton','Licht','Eintritt','Joker'];
 export function initialState(){return {members:[],roles:{},drinks:[],shopping:[],tallies:[],records:[],events:structuredClone(seedEvents),notes:[],corrections:[],applications:[],wall:[],eventSync:SOURCE_CHECKED}}
 export async function run(state,active,command){
-let output=structuredClone(state);output.events.sort((a,b)=>a.day.localeCompare(b.day)||(a.time||'').localeCompare(b.time||'')||a.name.localeCompare(b.name));
+let output=structuredClone(state);
+// Restore the verified next-show omitted by older homepage importers, once.
+if(!output.nextShowRepairOct8){const existing=output.events.find(e=>e.day==='2026-10-10'&&(/cry.?sis/i.test(e.name.replace(/\s/g,''))||e.ticket==='https://rausgegangen.de/events/cry-sis-0/'));if(!existing)output.events.push({id:'bonanzbar-2026-10-10',day:'2026-10-10',name:'CRY SIS´',time:'19:00',description:'Coverrock',ticket:'https://rausgegangen.de/events/cry-sis-0/',source:'https://bonanzbar.jimdofree.com/'});else if(!existing.time)existing.time='19:00';output.nextShowRepairOct8=true;}
+output.events.sort((a,b)=>a.day.localeCompare(b.day)||(a.time||'').localeCompare(b.time||'')||a.name.localeCompare(b.name));
 // One catalog, preserving existing beverage IDs and order membership.
 if(!output.inventoryUnified){for(const a of catalog(output)){const existing=output.drinks.find(d=>d.name.toLocaleLowerCase('de')===a.name.toLocaleLowerCase('de'));if(!existing)output.drinks.push({id:'supply-'+a.id,name:a.name,unit:a.unit,pack:1,price:0,guestPrice:0,purchasePrice:0,active:1,supply:true,showMenu:false,showTally:false,showShopping:a.active});}output.inventoryUnified=true;}
 const readState=()=>output;const writeState=s=>{output=s};
