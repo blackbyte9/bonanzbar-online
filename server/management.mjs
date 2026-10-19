@@ -5,24 +5,31 @@ import {dayNow} from './operations-api.mjs';
 const amount=(v,max=100000000)=>{if(!Number.isSafeInteger(v)||v<0||v>max)throw Error('Ungültiger Betrag.');return v};
 const text=(v,max=300)=>{if(typeof v!=='string'||!v.trim()||v.length>max)throw Error('Bitte die Pflichtfelder ausfüllen.');return v.trim()};
 export const balance=(s,user)=>(s.accountEntries||[]).filter(x=>x.user===user).reduce((n,x)=>n+x.amount,0);
-export function calculateInventory(s,b){
- const event=s.events.find(e=>e.id===b.event);if(!event)throw Error('Veranstaltung nicht gefunden.');
+function selectedOrders(s,b,before,after){
+ const ids=Array.isArray(b.orders)?b.orders:[];if(new Set(ids).size!==ids.length)throw Error('Bestellung doppelt ausgewählt.');
+ return ids.map(orderId=>{const order=s.records.find(r=>r.id===orderId&&r.kind==='order');if(!order)throw Error('Bestellung nicht gefunden.');if(Date.parse(order.date)<=Date.parse(before.date)||Date.parse(order.date)>Date.parse(after.date))throw Error('Ausgewählte Bestellungen müssen zeitlich zwischen den beiden Inventuren liegen.');return order});
+}
+function inventoryPeriod(s,b,{eventRequired=true}={}){
+ const event=eventRequired?s.events.find(e=>e.id===b.event):null;if(eventRequired&&!event)throw Error('Veranstaltung nicht gefunden.');
  const before=s.records.find(r=>r.id===b.before&&r.kind==='stock'),after=s.records.find(r=>r.id===b.after&&r.kind==='stock');
  if(!before||!after||before.id===after.id||Date.parse(before.date)>=Date.parse(after.date))throw Error('Zwei Bestände in richtiger zeitlicher Reihenfolge wählen.');
  const day=d=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin'}).format(new Date(d));
- if(day(before.date)>event.day||day(after.date)<event.day)throw Error('Die Bestände müssen den Veranstaltungstag einschließen.');
- if((s.eventAccounts||[]).some(a=>a.event!==b.event&&Date.parse(a.beforeDate)<Date.parse(after.date)&&Date.parse(a.afterDate)>Date.parse(before.date)))throw Error('Dieser Bestandszeitraum überschneidet sich mit einer anderen Veranstaltungsabrechnung.');
+ if(eventRequired&&(day(before.date)>event.day||day(after.date)<event.day))throw Error('Die Bestände müssen den Veranstaltungstag einschließen.');
+ if(eventRequired&&(s.eventAccounts||[]).some(a=>a.event!==b.event&&Date.parse(a.beforeDate)<Date.parse(after.date)&&Date.parse(a.afterDate)>Date.parse(before.date)))throw Error('Dieser Bestandszeitraum überschneidet sich mit einer anderen Veranstaltungsabrechnung.');
  const first=JSON.parse(before.data).filter(d=>!d.supply),last=JSON.parse(after.data).filter(d=>!d.supply);
  if(first.length!==last.length||first.some(d=>!last.some(x=>x.id===d.id)))throw Error('Beide Inventuren müssen dieselben Getränke enthalten. Bitte den Inventarwechsel prüfen.');
- const items=first.map(d=>{const end=last.find(x=>x.id===d.id),startCount=amount(d.cases)*amount(d.pack,1000)+amount(d.bottles)+amount(d.restMl??0,700)/700,endCount=amount(end.cases)*amount(end.pack,1000)+amount(end.bottles)+amount(end.restMl??0,700)/700,consumed=Math.round((startCount-endCount)*700)/700;
- if(consumed<0)throw Error(d.name+': Endbestand ist größer als Anfangsbestand. Nachlieferungen oder Zählfehler bitte prüfen.');
+ const orders=selectedOrders(s,b,before,after),deliveries=new Map();for(const order of orders)for(const row of JSON.parse(order.data)){const count=amount(row.cases)*amount(row.pack,1000)+amount(row.bottles);if(count)deliveries.set(row.id,(deliveries.get(row.id)||0)+count)}
+ const items=first.map(d=>{const end=last.find(x=>x.id===d.id),startCount=amount(d.cases)*amount(d.pack,1000)+amount(d.bottles)+amount(d.restMl??0,700)/700,endCount=amount(end.cases)*amount(end.pack,1000)+amount(end.bottles)+amount(end.restMl??0,700)/700,delivered=deliveries.get(d.id)||0,consumed=Math.round((startCount+delivered-endCount)*700)/700;
+ if(consumed<0)throw Error(d.name+': Endbestand ist trotz ausgewählter Lieferungen größer als Anfangsbestand. Bitte weitere Bestellung auswählen oder Zählung prüfen.');
  const current=s.drinks.find(x=>x.id===d.id)?.purchasePrice;const fromCurrent=d.purchasePrice==null||(d.purchasePrice===0&&current>0);const price=fromCurrent?current:d.purchasePrice;if(price==null)throw Error(d.name+': Einkaufspreis im Inventar ergänzen.');amount(price,100000);if(consumed>0&&price===0)throw Error(d.name+': Einkaufspreis ist 0. Bitte im Inventar ergänzen, damit der Verbrauch nicht kostenlos abgerechnet wird.');
- return {id:d.id,name:d.name,before:startCount,after:endCount,consumed,purchasePrice:price,cost:Math.round(consumed*price),priceSource:fromCurrent?'Aktueller Inventarpreis (fehlender/0-EK ergänzt)':'Preis der Anfangsinventur'};});
+ return {id:d.id,name:d.name,before:startCount,delivered,after:endCount,consumed,purchasePrice:price,cost:Math.round(consumed*price),priceSource:fromCurrent?'Aktueller Inventarpreis (fehlender/0-EK ergänzt)':'Preis der Anfangsinventur'};});
  const cost=items.reduce((n,i)=>n+i.cost,0);if(!Number.isSafeInteger(cost))throw Error('Beträge zu groß.');
- return {event:event.id,eventName:event.name,eventDay:event.day,before:before.id,after:after.id,beforeDate:before.date,afterDate:after.date,items,cost};
+ return {event:event?.id||null,eventName:event?.name||null,eventDay:event?.day||null,before:before.id,after:after.id,beforeDate:before.date,afterDate:after.date,orders:orders.map(o=>o.id),orderDetails:orders.map(o=>({id:o.id,date:o.date,by:o.by})),items,cost};
 }
+export function calculateInventory(s,b){return inventoryPeriod(s,b,{eventRequired:true})}
+export function calculateInterim(s,b){return inventoryPeriod(s,b,{eventRequired:false})}
 export function management(s,b,{active,admin,master,id,now,u}){
- const names=['saveDutyPrices','accountAdjustment','saveFeatures','saveRental','saveEventAccount','closeEventAccount','confirmHelp','settleAccount','accountPayment'];if(!names.includes(b.action))return null;
+ const names=['saveDutyPrices','accountAdjustment','saveFeatures','saveRental','saveEventAccount','closeEventAccount','saveInterimAccount','closeInterimAccount','confirmHelp','settleAccount','accountPayment'];if(!names.includes(b.action))return null;
  if(b.action==='saveRental'?!admin:!master)throw Error(b.action==='saveRental'?'Nur Admin oder Master.':'Nur Master darf diese Funktion nutzen.');
  if(b.action==='saveDutyPrices'){const prices={};for(const duty of Object.keys(dutyDefaults))prices[duty]=amount(b.prices?.[duty],100000);s.dutyPrices=prices;}
  if(b.action==='accountAdjustment'){if(!s.members.some(x=>x.userId===b.user)||!['credit','debit'].includes(b.kind))throw Error('Ungültige Buchung.');const value=amount(b.amount),reason=text(b.reason,500);if(!value)throw Error('Betrag muss positiv sein.');s.accountEntries??=[];if(!s.accountEntries.some(x=>x.id===id))s.accountEntries.push({id,user:b.user,kind:'adjustment',amount:b.kind==='credit'?value:-value,reason,date:now,by:u.displayName});}
@@ -40,7 +47,13 @@ export function management(s,b,{active,admin,master,id,now,u}){
  if(b.action==='saveEventAccount'||b.action==='closeEventAccount'){
   s.eventAccounts??=[];const prior=s.eventAccounts.find(x=>x.event===b.event);if(prior?.closed)throw Error('Abrechnung bereits festgeschrieben.');
   if(b.action==='closeEventAccount'){if(!prior)throw Error('Bitte zuerst die Abrechnung speichern.');Object.assign(prior,{closed:true,closedAt:now,closedBy:u.displayName});}
-  else{const calculation=calculateInventory(s,b),incomeDrinks=amount(b.incomeDrinks),incomeTickets=amount(b.incomeTickets),incomeOther=amount(b.incomeOther);const row={...calculation,incomeDrinks,incomeTickets,incomeOther,profit:incomeDrinks+incomeTickets+incomeOther-calculation.cost,closed:false,updatedAt:now,by:u.displayName};if(prior)Object.assign(prior,row);else s.eventAccounts.push(row);}
+  else{const calculation=calculateInventory(s,b),incomeDrinks=amount(b.incomeDrinks),incomeTickets=amount(b.incomeTickets),incomeOther=amount(b.incomeOther),otherCosts=amount(b.otherCosts??0);const row={...calculation,incomeDrinks,incomeTickets,incomeOther,otherCosts,profit:incomeDrinks+incomeTickets+incomeOther-calculation.cost-otherCosts,closed:false,updatedAt:now,by:u.displayName};if(prior)Object.assign(prior,row);else s.eventAccounts.push(row);}
+ }
+ if(b.action==='saveInterimAccount'||b.action==='closeInterimAccount'){
+  s.interimAccounts??=[];const prior=s.interimAccounts.find(x=>x.id===b.id);
+  if(prior?.closed)throw Error('Zwischenabrechnung bereits festgeschrieben.');
+  if(b.action==='closeInterimAccount'){if(!prior)throw Error('Zwischenabrechnung nicht gefunden.');Object.assign(prior,{closed:true,closedAt:now,closedBy:u.displayName});}
+  else{const title=text(b.title,150),calculation=calculateInterim(s,b),otherCosts=amount(b.otherCosts??0);const row={...calculation,id:b.id||id,title,otherCosts,totalCost:calculation.cost+otherCosts,closed:false,updatedAt:now,by:u.displayName};if(prior)Object.assign(prior,row);else s.interimAccounts.push(row);}
  }
  if(b.action==='confirmHelp'){
   const a=s.applications.find(x=>x.id===b.application&&x.status==='confirmed'),event=s.events.find(e=>e.id===a?.event);
