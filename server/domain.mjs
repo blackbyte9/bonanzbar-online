@@ -93,5 +93,10 @@ else throw Error('Unbekannte Aktion.');writeState(s);return reply(result)
 function reply(body,status=200){return {ok:status<400,status,json:async()=>body}}
 
 
-const response=await apiFetch('/api/crew',command?{method:'POST',body:JSON.stringify(command)}:{});const body=await response.json();if(!response.ok)throw Error(body.error);return {state:output,body};
+const response=await apiFetch('/api/crew',command?{method:'POST',body:JSON.stringify(command)}:{});const body=await response.json();if(!response.ok)throw Error(body.error);
+if(!command&&output.roles[active]==='master'){
+ body.inventoryTallies=output.tallies.map(t=>({id:t.id,drink:t.drink,date:t.date,void:!!t.void,kind:t.kind}));
+ body.inventoryDrinks=output.drinks.map(d=>({id:d.id,name:d.name,purchasePrice:d.purchasePrice,partialBottle:d.partialBottle}));
+}
+return {state:output,body};
 }
