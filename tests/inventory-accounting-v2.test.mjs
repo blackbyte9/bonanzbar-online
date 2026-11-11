@@ -26,12 +26,37 @@ test('drinklist counts exclude start boundary, voids, allocations and outside pe
  assert.equal(calculateInterim(s,{before:'before',after:'after'}).tallyCount,1);
 });
 
-test('0.7-l bottle: seven 20-ml marks consume 0.2 bottles, never seven bottles',()=>{
- const s=accountingState();s.drinks[0].partialBottle=true;
+test('explicitly included wine still supports fractional bottle quantities',()=>{
+ const s=accountingState();s.drinks[0].partialBottle=true;s.drinks[0].inventoryCategory='Wein';
  s.tallies=Array.from({length:7},(_,i)=>({id:'shot-'+i,drink:'beer',date:'2026-10-10T18:00:00Z'}));
  assert.throws(()=>calculateInterim(s,{before:'before',after:'after'}),/Menge pro Drinklist/);
  const a=calculateInterim(s,{before:'before',after:'after',tallyUnits:{beer:20/700}});
  assert.equal(a.items[0].tallyQuantity,0.2);assert.equal(a.items[0].expectedAfter,39.8);assert.equal(a.tallyCost,20);
+});
+
+test('spirits and Jacky Cola are excluded from stock, deliveries, cost and person totals; soft mixers remain',()=>{
+ const s=accountingState();
+ s.drinks.push({id:'gin',name:'Gin',partialBottle:true,purchasePrice:0},{id:'jacky',name:'Jacky Cola',purchasePrice:2000},{id:'tonic',name:'Schweppes Tonic Water',purchasePrice:100},{id:'house',name:'Hausmix',inventoryCategory:'Schnaps',purchasePrice:0});
+ for(const r of s.records){const rows=JSON.parse(r.data);rows.push({id:'gin',name:'Gin',pack:6,cases:r.id==='before'?3:0,bottles:0,purchasePrice:0},{id:'tonic',name:'Schweppes Tonic Water',pack:6,cases:0,bottles:r.id==='before'?2:0,purchasePrice:100});if(r.kind==='order')rows.push({id:'jacky',name:'Jacky Cola',pack:1,cases:0,bottles:8});r.data=JSON.stringify(rows)}
+ s.members=[{userId:'frank',displayName:'Frank'},{userId:'alex',displayName:'Alex'}];
+ s.tallies=[['one','beer','frank'],['two','beer','frank'],['three','tonic','alex'],['four','gin','alex'],['five','jacky','frank'],['six','house','frank']].map(([id,drink,user])=>({id,drink,user,date:'2026-10-10T18:00:00Z',receipt:'already-paid'}));
+ s.tallies.push({id:'void',drink:'beer',user:'frank',date:'2026-10-10T18:00:00Z',void:true},{id:'early',drink:'beer',user:'frank',date:'2026-10-10T10:00:00Z'});
+ const a=calculateInterim(s,{before:'before',after:'after',orders:['delivery']});
+ assert.deepEqual(a.items.map(x=>x.id),['beer','tonic']);assert.equal(a.tallyCount,3);assert.equal(a.cost,3200);assert.equal(a.tallyCost,300);
+ assert.deepEqual(a.tallyPeople.map(p=>[p.name,p.count]),[['Alex',1],['Frank',2]]);assert.equal(a.tallyPeople[1].drinks[0].count,2);assert.equal(a.tallyPeople.reduce((n,p)=>n+p.count,0),a.tallyCount);
+});
+
+test('people sharing a name are not merged; archived items and excluded-only people handled',async()=>{
+ const s={...initialState(),...accountingState(),inventoryUnified:true,members:[{userId:'master',displayName:'Master'},{userId:'a',displayName:'Alex'},{userId:'b',displayName:'Alex'}],roles:{master:'master',a:'crew',b:'crew'}};
+ s.drinks[0].active=0;s.drinks.push({id:'jacky',name:'Jacky Cola',active:0});
+ s.tallies=[{id:'a1',user:'a',drink:'beer',date:'2026-10-10T23:00:00Z',receipt:'paid'},{id:'b1',user:'b',drink:'beer',date:'2026-10-10T20:00:00Z'},{id:'m1',user:'master',drink:'jacky',date:'2026-10-10T20:00:00Z'}];
+ const data=(await run(s,'master')).body;
+ const server=calculateInterim(s,{before:'before',after:'after'}),preview=calculateInterim({records:[...data.stock,...data.orders],drinks:data.inventoryDrinks,tallies:data.inventoryTallies},{before:'before',after:'after'});
+ assert.deepEqual(preview,server);assert.equal(server.tallyPeople.length,2);assert.deepEqual(server.tallyPeople.map(p=>p.user),['a','b']);
+ const saved=(await run(s,'master',{action:'saveInterimAccount',id:'people',title:'Personen',before:'before',after:'after',requestId:'save-person-summary'})).state;
+ assert.deepEqual(saved.interimAccounts[0].tallyPeople,server.tallyPeople);
+ saved.tallies[0].user='b';
+ await assert.rejects(run(saved,'master',{action:'closeInterimAccount',id:'people',requestId:'close-person-summary'}),/neu berechnen/);
 });
 
 test('unexpected surplus remains visible rather than blocking interim reconciliation',()=>{

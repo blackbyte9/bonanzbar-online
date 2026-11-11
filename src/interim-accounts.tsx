@@ -1,7 +1,8 @@
 import {useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
-import {calculateInterim,interimTallyCounts} from '../server/management.mjs';
+import {calculateInterim} from '../server/management.mjs';
+import {interimDrinklist} from '../server/interim-drinklist.mjs';
 import {csvCell} from '../server/csv-format.mjs';
 import {OrderPicker,records} from './management';
 
@@ -17,15 +18,22 @@ function exportInterim(a:any){
   ['Ausgewählte, im Zeitraum erhaltene Bestellungen',...(a.orderDetails||[]).map((o:any)=>stamp(o.date)+' · '+o.by)],
   ['Getränk','Anfang','Lieferung','Verfügbar','Striche','Einheiten pro Strich','Drinklist-Verbrauch','Soll-Endbestand','Ist-Endbestand','Abweichung Ist minus Soll','Verbrauch tatsächlich','EK EUR','Drinklist EK EUR','Verbrauchskosten EUR'],
   ...a.items.map((i:any)=>[i.name,i.before,i.delivered||0,i.available??i.before+(i.delivered||0),i.tallyCount??'',i.tallyUnitsPerMark??'',i.tallyQuantity??'',i.expectedAfter??'',i.after,i.variance??'',i.consumed,i.purchasePrice/100,i.tallyCost==null?'':i.tallyCost/100,i.cost/100]),
-  ['Drinklist-Verbrauch zum EK',a.tallyCost==null?'':a.tallyCost/100],['Verbrauchskosten gesamt',a.cost/100],['Sonstige Kosten',(a.otherCosts||0)/100],['Kosten gesamt',(a.totalCost??a.cost+(a.otherCosts||0))/100]];
+  ['Drinklist-Verbrauch zum EK',a.tallyCost==null?'':a.tallyCost/100],['Verbrauchskosten gesamt',a.cost/100],['Sonstige Kosten',(a.otherCosts||0)/100],['Kosten gesamt',(a.totalCost??a.cost+(a.otherCosts||0))/100],
+  ['Schnaps und entsprechende Mixgetränke ausgeschlossen',a.excludeSpirits?'Ja':'Historischer Berechnungsstand'],
+  [],['Drinklist nach Personen','Getränk','Striche'],
+  ...(a.tallyPeople||[]).flatMap((p:any)=>[[p.name,'Gesamt',p.count],...p.drinks.map((d:any)=>[p.name,d.name,d.count])])];
  const url=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
  const link=document.createElement('a');link.href=url;link.download='Zwischenabrechnung-'+a.beforeDate.slice(0,10)+'-'+a.afterDate.slice(0,10)+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-function Reconciliation({calculation:a,otherCosts=0}:any){return <div className="interim-result">
+export function TallyPeople({people,live=false}:any){return <section aria-label="Drinklist nach Personen"><h3>Wer hat wie viele Striche gemacht?</h3><p>{live?'Aktueller Drinklist-Verlauf im damaligen Zeitraum; die gespeicherte Abrechnung bleibt unverändert.':'Berücksichtigte Drinklist-Striche zwischen den Bestandsaufnahmen.'} Schnaps und entsprechende Mixgetränke sind ausgeschlossen.</p>{people.map((p:any)=><article className="reconcile-item" key={p.user}><h4>{p.name} · {p.count} {p.count===1?'Strich':'Striche'}</h4>{p.drinks.map((d:any)=><div className="list-row" key={d.id}><span>{d.name}</span><strong>{d.count} {d.count===1?'Strich':'Striche'}</strong></div>)}</article>)}{!people.length&&<p>Keine berücksichtigten Drinklist-Striche in diesem Zeitraum.</p>}</section>}
+
+function Reconciliation({calculation:a,otherCosts=0,showPeople=true}:any){return <div className="interim-result">
  <div className="metric-grid"><div>Verbrauch gesamt zum EK<strong>{money(a.cost)}</strong></div><div>Davon Drinklist zum EK<strong>{a.tallyCost==null?'Nicht ermittelt':money(a.tallyCost)}</strong></div><div>Sonstige Kosten<strong>{money(otherCosts)}</strong></div><div>Kosten gesamt<strong>{money(a.cost+otherCosts)}</strong></div></div>
  <p>Der Drinklist-Anteil ist bereits in den Verbrauchskosten enthalten. Er wird nicht nochmals als Ausgabe addiert. Alle Mengen beziehen sich auf einzelne Flaschen bzw. Bestandseinheiten, nicht auf Gebinde.</p>
  {a.reconciliationVersion&&<p><strong>{a.tallyCount} gültige Drinklist-Striche</strong> im Zeitraum; bereits abgerechnete Striche zählen mit. Stornierte Striche und Kostenumlagen zählen nicht.</p>}
+ {a.excludeSpirits&&<p>Schnaps und entsprechende Mixgetränke sind aus Beständen, Lieferungen, Kosten und Drinklist-Abgleich herausgerechnet.</p>}
+ {showPeople&&a.tallyPeople&&<TallyPeople people={a.tallyPeople}/>}
  {a.items.map((i:any)=><article className="reconcile-item" key={i.id}>
   <h4>{i.name}</h4>
   <p className="reconcile-formula">{qty(i.before)} Anfang + {qty(i.delivered||0)} Lieferung = <strong>{qty(i.available??i.before+(i.delivered||0))} verfügbar</strong></p>
@@ -44,34 +52,38 @@ export function InterimAccounts({data,act,busy,confirm}:any){
  const [id,setId]=useState(()=>crypto.randomUUID()),[editing,setEditing]=useState(false),[title,setTitle]=useState(''),[before,setBefore]=useState(''),[after,setAfter]=useState(''),[orders,setOrders]=useState<string[]>([]),[otherCosts,setOtherCosts]=useState('0'),[tallyUnits,setTallyUnits]=useState<Record<string,number|null>>({});
  const start=data.stock.find((r:any)=>r.id===before),end=data.stock.find((r:any)=>r.id===after);
  const drinks=data.inventoryDrinks||data.drinks;
- const counts=interimTallyCounts(data.inventoryTallies||[],start?.date,end?.date);
- const stockItems=start?JSON.parse(start.data).filter((i:any)=>!i.supply):[];
+ const interimState={records:records(data),drinks,tallies:data.inventoryTallies};
+ const {counts,people,excludedIds}=interimDrinklist(interimState,start?.date,end?.date);
+ const stockItems=start?JSON.parse(start.data).filter((i:any)=>!i.supply&&!excludedIds.has(i.id)):[];
  let calculation:any=null,error='';
- try{if(start&&end){if(!data.inventoryTallies)throw Error('Drinklist-Verlauf wird benötigt. Bitte die App neu laden.');calculation=calculateInterim({records:records(data),drinks,tallies:data.inventoryTallies},{before,after,orders,tallyUnits})}}catch(e){error=(e as Error).message}
+ try{if(start&&end){if(!data.inventoryTallies)throw Error('Drinklist-Verlauf wird benötigt. Bitte die App neu laden.');calculation=calculateInterim(interimState,{before,after,orders,tallyUnits})}}catch(e){error=(e as Error).message}
  function clear(){setId(crypto.randomUUID());setEditing(false);setTitle('');setBefore('');setAfter('');setOrders([]);setOtherCosts('0');setTallyUnits({})}
  function edit(a:any){setId(a.id);setEditing(true);setTitle(a.title);setBefore(a.before);setAfter(a.after);setOrders(a.orders||[]);setOtherCosts(String((a.otherCosts||0)/100));setTallyUnits(a.tallyUnits||{});document.getElementById('interim-heading')?.scrollIntoView({behavior:'smooth',block:'start'})}
  return <section className="panel"><h2 id="interim-heading">Zwischenabrechnung · Soll & Ist</h2>
   <p><strong>Anfangsbestand + erhaltene Lieferungen − Drinklist-Verbrauch = Soll-Endbestand.</strong> Vergleiche diesen Sollbestand mit der gezählten Endinventur. Der Endbestand darf durch eine Lieferung höher sein als der Anfangsbestand.</p>
+  <p><strong>Ohne Schnaps und spirituosenhaltige Mixgetränke wie Jacky Cola.</strong> Deren Bestände, Lieferungen, Kosten und Striche zählen hier nicht mit. Weitere solche Artikel im Inventar der Kategorie „Schnaps“ zuordnen. Die persönlichen Drinklisten bleiben vollständig erhalten.</p>
   <form className="event-form" onSubmit={async e=>{e.preventDefault();if(await act('saveInterimAccount',{id,title,before,after,orders,tallyUnits,otherCosts:cents(otherCosts)}))clear()}}>
    <fieldset disabled={busy}>
    <legend>{editing?'Gespeicherten Entwurf aktualisieren':'Neue Zwischenabrechnung'}</legend>
    <label>Bezeichnung<Input required maxLength={150} value={title} onChange={e=>setTitle(e.target.value)} placeholder="Zum Beispiel: Zwischen zwei Konzerten"/></label>
    <div className="form-grid">{[['Anfangsbestand',before,setBefore],['Gezählter Endbestand',after,setAfter]].map(([label,value,setter]:any)=><label key={label}>{label}<select required value={value} onChange={e=>{setter(e.target.value);setOrders([]);setTallyUnits({})}}><option value="">Inventur wählen</option>{data.stock.map((r:any)=><option key={r.id} value={r.id}>{stamp(r.date)} · {r.by}{r.correctedAt?' · korrigiert':''}</option>)}</select></label>)}</div>
    <OrderPicker {...{data,before,after,value:orders,setValue:setOrders,disabled:busy,allowEarlier:true}}/>
-   {!!counts.size&&<fieldset><legend>Verbrauch je Drinklist-Strich prüfen</legend><p>Bei Flaschengetränken ist 1 Strich = 1 Flasche voreingestellt. Für angebrochene 0,7-l-Flaschen die ausgeschenkte Menge in ml eingeben (z. B. 20 ml = 2 cl). Die Einstellung gilt für diese Abrechnung. Bei Wein oder anderen Ausschankgrößen den entsprechenden Flaschenanteil eintragen.</p>
+   {start&&end&&Date.parse(start.date)<Date.parse(end.date)&&data.inventoryTallies&&<TallyPeople people={people}/>}
+   {!!counts.size&&<fieldset><legend>Verbrauch je Drinklist-Strich prüfen</legend><p>Bei Flaschengetränken ist 1 Strich = 1 Flasche voreingestellt. Bei Wein oder anderen Ausschankgrößen den entsprechenden Flaschenanteil eintragen. Die Einstellung gilt für diese Abrechnung.</p>
     {stockItems.filter((i:any)=>counts.has(i.id)).map((i:any)=>{const partial=drinks.find((d:any)=>d.id===i.id)?.partialBottle||i.restMl>0||JSON.parse(end?.data||'[]').find((d:any)=>d.id===i.id)?.restMl>0;const unit=tallyUnits[i.id]??(partial?null:1);return <label key={i.id}>{i.name} · {counts.get(i.id)} Striche · {partial?'ml pro Strich (Flasche: 700 ml)':'Flaschen / Einheiten pro Strich'}<Input required type="number" min={partial?'1':'0.000001'} max={partial?'700':'1000'} step="any" value={unit==null?'':partial?Number((unit*700).toFixed(6)):unit} placeholder={partial?'Ausschankmenge in ml':''} onChange={e=>setTallyUnits({...tallyUnits,[i.id]:e.target.value===''?null:Number(e.target.value)/(partial?700:1)})}/></label>})}
    </fieldset>}
    <label>Sonstige Kosten (€)<Input required type="number" min="0" max="1000000" step="0.01" value={otherCosts} onChange={e=>setOtherCosts(e.target.value)}/></label>
    {error&&<p className="notice" role="alert">{error}</p>}
-   {calculation&&<Reconciliation calculation={calculation} otherCosts={cents(otherCosts)}/>}
+   {calculation&&<Reconciliation calculation={calculation} otherCosts={cents(otherCosts)} showPeople={false}/>}
    <div className="actions"><Button disabled={!calculation||!title.trim()}>{editing?'Entwurf neu berechnen und speichern':'Zwischenabrechnung speichern'}</Button>{editing&&<Button type="button" variant="outline" onClick={clear}>Bearbeitung abbrechen</Button>}</div>
    </fieldset>
   </form>
   <h3>Gespeicherte Zwischenabrechnungen</h3>
   {(data.interimAccounts||[]).slice().reverse().map((a:any)=><details className="archive" key={a.id}><summary>{a.title} · {stamp(a.beforeDate)} bis {stamp(a.afterDate)} <span>{a.closed?'abgeschlossen':'Entwurf'}</span></summary>
    <p>Gespeicherter Stand vom {stamp(a.updatedAt)} · {a.by}</p><Reconciliation calculation={a} otherCosts={a.otherCosts||0}/>
+   {!a.tallyPeople&&<TallyPeople people={interimDrinklist(interimState,a.beforeDate,a.afterDate).people} live/>}
    <div className="actions"><Button variant="outline" onClick={()=>exportInterim(a)}>CSV herunterladen</Button>{!a.closed&&<><Button variant="outline" disabled={busy} onClick={()=>edit(a)}>Bearbeiten / neu berechnen</Button><Button disabled={busy||!a.reconciliationVersion} onClick={()=>confirm({title:'Zwischenabrechnung festschreiben?',text:'Lieferungen, Drinklist-Abgleich, Ausschankmengen und Kosten werden mit diesem Stand archiviert.',run:()=>act('closeInterimAccount',{id:a.id})})}>Abschließen</Button></>}</div>
-   {!a.closed&&!a.reconciliationVersion&&<p>Für den neuen Soll-Ist-Vergleich diesen Entwurf bearbeiten und erneut speichern.</p>}
+   {!a.closed&&a.reconciliationVersion!==2&&<p>Damit Schnaps herausgerechnet und die Personenaufstellung gespeichert wird, diesen älteren Entwurf bearbeiten und erneut speichern.</p>}
   </details>)}
   {!data.interimAccounts?.length&&<p className="muted">Noch keine Zwischenabrechnung gespeichert.</p>}
  </section>

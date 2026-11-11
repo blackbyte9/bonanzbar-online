@@ -5,6 +5,7 @@ import {catalog,shoppingChoices,shoppingAction} from './shopping.mjs';
 import {rentalView,infoView,community} from './community.mjs';
 import {features,requireFeature} from './features.mjs';
 import {management,balance,dutyPrices} from './management.mjs';
+import {drinklistWeeks} from './drinklist-weeks.mjs';
 import {seedEvents,SOURCE_CHECKED,mergeEvents} from './event-seed.mjs';
 import {operate,staffingView} from './operations-api.mjs';
 export const duties=['Theke','Parkplatz','Ton','Licht','Eintritt','Joker'];
@@ -95,8 +96,10 @@ function reply(body,status=200){return {ok:status<400,status,json:async()=>body}
 
 const response=await apiFetch('/api/crew',command?{method:'POST',body:JSON.stringify(command)}:{});const body=await response.json();if(!response.ok)throw Error(body.error);
 if(!command&&output.roles[active]==='master'){
- body.inventoryTallies=output.tallies.map(t=>({id:t.id,drink:t.drink,date:t.date,void:!!t.void,kind:t.kind}));
- body.inventoryDrinks=output.drinks.map(d=>({id:d.id,name:d.name,purchasePrice:d.purchasePrice,partialBottle:d.partialBottle}));
+ body.drinklistWeeks=drinklistWeeks(output);
+ const memberNames=new Map(output.members.map(p=>[p.userId,p.displayName]));
+ body.inventoryTallies=output.tallies.map(t=>({id:t.id,drink:t.drink,name:t.name,user:t.user,memberName:memberNames.get(t.user)||t.memberName,date:t.date,void:!!t.void,kind:t.kind}));
+ body.inventoryDrinks=output.drinks.map(d=>({id:d.id,name:d.name,purchasePrice:d.purchasePrice,partialBottle:d.partialBottle,inventoryCategory:d.inventoryCategory,supply:d.supply}));
 }
 return {state:output,body};
 }
